@@ -43,6 +43,7 @@
   .slide{
     height:100vh;
     scroll-snap-align:start;
+    scroll-snap-stop:always;
     position:relative;
     display:flex;
     align-items:center;
@@ -225,7 +226,7 @@
   }
 
   /* ---------- End of list card ---------- */
-  .end-slide{ height:100vh; scroll-snap-align:start; }
+  .end-slide{ height:100vh; scroll-snap-align:start; scroll-snap-stop:always; }
   .end-slide .replay-btn{
     margin-top:8px; padding:12px 22px; border-radius:24px; border:none;
     background:var(--sun); color:var(--ink); font-family:'Fredoka',sans-serif;
@@ -368,6 +369,16 @@ async function importChannelShorts(inputValue, onProgress){
 
 // ---------- feed rendering ----------
 let videos = [];
+let displayOrder = [];
+
+function shuffleArray(arr){
+  const copy = arr.slice();
+  for(let i = copy.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
 
 // ---------- daily time limit state ----------
 let dailyLimitMinutes = 45;
@@ -435,10 +446,11 @@ function renderCurrentKidView(){
 function renderFeed(){
   const feed = document.getElementById('feed');
   if(videos.length === 0){ renderEmpty(); return; }
-  feed.innerHTML = videos.map((v,i) => `
+  displayOrder = shuffleArray(videos);
+  feed.innerHTML = displayOrder.map((v,i) => `
     <div class="slide" data-id="${v.id}" data-index="${i}">
       <div class="badge"><span class="dot"></span>Disetujui Ayah/Ibu</div>
-      <div class="dots">${videos.map((_,j)=>`<div class="d ${j===i?'active':''}"></div>`).join('')}</div>
+      <div class="dots">${displayOrder.map((_,j)=>`<div class="d ${j===i?'active':''}"></div>`).join('')}</div>
     </div>
   `).join('') + `
     <div class="end-slide slide" style="background:var(--ink);">
