@@ -81,6 +81,17 @@
     background:rgba(255,255,255,0.3);
   }
   .dots .d.active{ background:var(--sun); height:18px; border-radius:4px; }
+  .dots-track{
+    position:absolute; right:14px; top:50%; transform:translateY(-50%);
+    height:140px; width:4px; background:rgba(255,255,255,0.18); border-radius:4px;
+  }
+  .dots-marker{
+    position:absolute; left:-3px; width:10px; height:16px; border-radius:4px;
+    background:var(--sun); transform:translateY(-50%);
+  }
+  .slide .thumb{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  }
 
   /* ---------- Empty state ---------- */
   .empty{
@@ -100,6 +111,16 @@
     display:flex; align-items:center; justify-content:center;
     font-size:20px; cursor:pointer; z-index:50;
     box-shadow:0 4px 14px rgba(0,0,0,0.35);
+  }
+
+  /* ---------- Sound toggle ---------- */
+  #soundBtn{
+    position:fixed; top:16px; right:16px;
+    width:40px; height:40px; border-radius:50%;
+    background:rgba(27,42,74,0.75); border:1.5px solid rgba(255,255,255,0.15);
+    display:flex; align-items:center; justify-content:center;
+    font-size:17px; cursor:pointer; z-index:50;
+    backdrop-filter:blur(4px);
   }
 
   /* ---------- Overlay ---------- */
@@ -239,6 +260,7 @@
 <div id="feed"></div>
 
 <button id="lockBtn" title="Mode Orang Tua">🔒</button>
+<button id="soundBtn" title="Suara">🔇</button>
 <button id="installBtn" title="Instal Aplikasi" style="display:none;">📲 Instal Aplikasi</button>
 
 <div id="overlayRoot"></div>
@@ -380,6 +402,15 @@ function shuffleArray(arr){
   return copy;
 }
 
+function positionIndicatorHtml(i, total){
+  if(total <= 1) return '';
+  if(total <= 12){
+    return `<div class="dots">${Array.from({length: total}).map((_,j)=>`<div class="d ${j===i?'active':''}"></div>`).join('')}</div>`;
+  }
+  const pct = total === 1 ? 0 : (i / (total - 1)) * 100;
+  return `<div class="dots-track"><div class="dots-marker" style="top:${pct}%"></div></div>`;
+}
+
 // ---------- daily time limit state ----------
 let dailyLimitMinutes = 45;
 let usage = { date: todayStr(), usedSeconds: 0 };
@@ -387,6 +418,18 @@ let extra = { date: todayStr(), minutes: 0 };
 let overlayOpen = false;
 let locked = false;
 let timerHandle = null;
+let soundOn = false;
+
+function toggleSound(){
+  soundOn = !soundOn;
+  setVal('sound-on', soundOn);
+  const btn = document.getElementById('soundBtn');
+  if(btn) btn.textContent = soundOn ? '🔊' : '🔇';
+  document.querySelectorAll('.slide iframe').forEach(f=>{
+    const slide = f.closest('.slide');
+    if(slide) f.src = buildEmbedSrc(slide.dataset.id);
+  });
+}
 
 function todayStr(){
   const d = new Date();
@@ -408,7 +451,7 @@ async function loadTimeState(){
 function startTimer(){
   if(timerHandle) clearInterval(timerHandle);
   timerHandle = setInterval(async ()=>{
-    if(overlayOpen || locked) return;
+    if(overlayOpen || locked || videos.length === 0) return;
     usage.usedSeconds++;
     if(usage.usedSeconds % 5 === 0) await setVal('usage-today', usage);
     if(usage.usedSeconds >= effectiveLimitSeconds()){
@@ -449,8 +492,9 @@ function renderFeed(){
   displayOrder = shuffleArray(videos);
   feed.innerHTML = displayOrder.map((v,i) => `
     <div class="slide" data-id="${v.id}" data-index="${i}">
+      <img class="thumb" src="https://img.youtube.com/vi/${v.id}/hqdefault.jpg" alt="">
       <div class="badge"><span class="dot"></span>Disetujui Ayah/Ibu</div>
-      <div class="dots">${displayOrder.map((_,j)=>`<div class="d ${j===i?'active':''}"></div>`).join('')}</div>
+      ${positionIndicatorHtml(i, displayOrder.length)}
     </div>
   `).join('') + `
     <div class="end-slide slide" style="background:var(--ink);">
@@ -469,16 +513,23 @@ function renderFeed(){
   });
 }
 
+let currentObserver = null;
+
+function buildEmbedSrc(id){
+  return `https://www.youtube.com/embed/${id}?autoplay=1&mute=${soundOn ? 0 : 1}&loop=1&playlist=${id}&modestbranding=1&rel=0&playsinline=1`;
+}
+
 function setupObserver(){
+  if(currentObserver) currentObserver.disconnect();
   const slides = document.querySelectorAll('.slide');
-  const observer = new IntersectionObserver((entries)=>{
+  currentObserver = new IntersectionObserver((entries)=>{
     entries.forEach(entry=>{
       const slide = entry.target;
       const id = slide.dataset.id;
       if(entry.isIntersecting && entry.intersectionRatio > 0.6){
         if(!slide.querySelector('iframe')){
           const iframe = document.createElement('iframe');
-          iframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&mute=0&loop=1&playlist=${id}&modestbranding=1&rel=0&playsinline=1`;
+          iframe.src = buildEmbedSrc(id);
           iframe.allow = "autoplay; encrypted-media; picture-in-picture";
           iframe.allowFullscreen = true;
           slide.appendChild(iframe);
@@ -489,7 +540,7 @@ function setupObserver(){
       }
     });
   }, { threshold: [0, 0.6] });
-  slides.forEach(s => observer.observe(s));
+  slides.forEach(s => currentObserver.observe(s));
 }
 
 // ---------- Parent mode overlay ----------
@@ -695,7 +746,7 @@ function channelItemHtml(c){
 async function bindChannelAndApiControls(){
   const apiInput = document.getElementById('apiKeyInput');
   if(apiInput){
-    apiInput.addEventListener('change', async ()=>{
+    apiInput.addEventListener('input', async ()=>{
       await setVal('youtube-api-key', apiInput.value.trim());
     });
   }
@@ -837,10 +888,13 @@ async function addVideoFromInput(){
 }
 
 document.getElementById('lockBtn').addEventListener('click', openParentFlow);
+document.getElementById('soundBtn').addEventListener('click', toggleSound);
 
 // ---------- init ----------
 (async function init(){
   videos = await getVal('videos-list', []);
+  soundOn = await getVal('sound-on', false);
+  document.getElementById('soundBtn').textContent = soundOn ? '🔊' : '🔇';
   await loadTimeState();
   renderCurrentKidView();
   startTimer();
